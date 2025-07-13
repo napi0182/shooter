@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>좀비 총쏘기 게임</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { width: 100%; height: 100%; font-family: sans-serif; }
+    /* UI 영역 */
+    #ui {
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 15px; align-items: center;
+      background: rgba(0, 0, 0, 0.7); padding: 10px 20px; border-radius: 10px;
+      z-index: 100; height: 60px;
+    }
+    .status-box { display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; background: rgba(255,255,255,0.9); border-radius:5px;
+      font-size:1.4rem; color:#222; font-weight:bold;
+    }
+    .status-box .icon { font-size:1.6rem; }
+    button { padding:8px 16px; font-size:1rem; cursor:pointer; border-radius:4px; }
+    /* 게임 영역: 다크 그라데이션 배경 */
+    #gameArea {
+      position:absolute; top:80px; left:0; right:0; bottom:0;
+      overflow:hidden; background: linear-gradient(#222, #111); cursor:crosshair;
+    }
+    /* 좀비 스타일 */
+    .zombie { position:absolute; background:white; }
+    /* 파티클 스타일 */
+    .particle {
+      position:absolute; width:6px; height:6px; background: orange;
+      border-radius:50%; pointer-events:none; opacity:1; transform: translate(0,0);
+      transition: transform 0.6s ease-out, opacity 0.6s ease-out;
+    }
+    /* 생명 감소 이펙트 */
+    .damage {
+      position:absolute; font-size:2rem; color:red; font-weight:bold;
+      pointer-events:none; animation: damageAnim 0.8s ease-out forwards;
+    }
+    @keyframes damageAnim {
+      0% { opacity:1; transform: translate(-50%, 0); }
+      100% { opacity:0; transform: translate(-50%, -40px); }
+    }
+    /* 게임 오버 오버레이 */
+    #gameOverOverlay {
+      position:absolute; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.7); display:none;
+      justify-content:center; align-items:center; color:white;
+      font-size:2rem; flex-direction:column; gap:20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="score" class="status-box"><span class="icon">🎯</span><span>0</span></div>
+    <div id="lives" class="status-box"><span class="icon">❤️</span><span>3</span></div>
+    <button id="startBtn">시작</button>
+    <button id="restartBtn" style="display:none;">재시작</button>
+  </div>
+  <div id="gameArea"></div>
+  <div id="gameOverOverlay">
+    <div>게임 오버</div>
+    <button id="gameOverRestart">다시 시작</button>
+  </div>
+
+  <script>
+    const gameArea = document.getElementById('gameArea');
+    const scoreBox = document.querySelector('#score span:last-child');
+    const livesBox = document.querySelector('#lives span:last-child');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const gameOverRestart = document.getElementById('gameOverRestart');
+
+    let score = 0, lives = 3;
+    let spawnInterval = 1000, spawnTimer, active = false;
+    let zombieSize = 100;
+
+    function updateUI() {
+      scoreBox.textContent = score;
+      livesBox.textContent = lives;
+    }
+
+    function createExplosion(x, y) {
+      for (let i = 0; i < 12; i++) {
+        const p = document.createElement('div'); p.classList.add('particle');
+        gameArea.appendChild(p);
+        p.style.left = `${x}px`; p.style.top = `${y}px`;
+        const angle = Math.random() * 2 * Math.PI;
+        const dist = 30 + Math.random() * 30;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        requestAnimationFrame(() => {
+          p.style.transform = `translate(${dx}px, ${dy}px)`;
+          p.style.opacity = '0';
+        });
+        setTimeout(() => p.remove(), 600);
+      }
+    }
+
+    function createDamage(x, y) {
+      const dmg = document.createElement('div');
+      dmg.classList.add('damage');
+      dmg.textContent = '-1 ❤️';
+      gameArea.appendChild(dmg);
+      dmg.style.left = `${x}px`;
+      dmg.style.top = `${y}px`;
+      setTimeout(() => dmg.remove(), 800);
+    }
+
+    function updateZombies() {
+      if (!active) return;
+      const z = document.createElement('div'); z.className = 'zombie';
+      z.style.width = `${zombieSize}px`; z.style.height = `${zombieSize}px`;
+      const maxX = gameArea.clientWidth - zombieSize;
+      const maxY = gameArea.clientHeight - zombieSize;
+      const x = Math.random() * maxX;
+      const y = Math.random() * maxY;
+      z.style.left = `${x}px`; z.style.top = `${y}px`;
+      gameArea.appendChild(z);
+
+      zombieSize = Math.max(30, zombieSize - 10);
+
+      setTimeout(() => z && (z.style.background = 'yellow'), 500);
+      setTimeout(() => z && (z.style.background = 'red'), 1000);
+      const dieTimeout = setTimeout(() => {
+        if (!z) return;
+        createDamage(x + zombieSize/2, y);
+        z.remove(); lives--; updateUI(); if (lives <= 0) endGame();
+      }, 1500);
+
+      z.addEventListener('click', () => {
+        clearTimeout(dieTimeout);
+        createExplosion(x + zombieSize/2, y + zombieSize/2);
+        z.remove(); score++; updateUI();
+        if (score % 10 === 0 && spawnInterval > 200) spawnInterval = Math.max(200, spawnInterval - 200);
+      });
+
+      spawnTimer = setTimeout(updateZombies, spawnInterval);
+    }
+
+    function startGame() {
+      score = 0; lives = 3; spawnInterval = 1000; zombieSize = 100;
+      active = true; updateUI();
+      startBtn.style.display = 'none'; restartBtn.style.display = 'inline-block';
+      gameOverOverlay.style.display = 'none'; gameArea.innerHTML = '';
+      updateZombies();
+    }
+
+    function endGame() {
+      active = false; clearTimeout(spawnTimer);
+      gameOverOverlay.style.display = 'flex';
+    }
+
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', startGame);
+    gameOverRestart.addEventListener('click', startGame);
+  </script>
+</body>
+</html>
